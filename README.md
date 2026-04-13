@@ -32,15 +32,28 @@
 进入你的仓库主页，依次点击 `Settings` -> `Secrets and variables` -> `Actions`，点击 `New repository secret`，添加以下 **3 个**变量：
 
 #### 🔑 `ACCOUNTS` (必填)
-严格按照 JSON 数组格式填写你的 `yabook.blog` 账号和密码。
-```json
+注意几点：
+
+最外层的中括号 [ 和 ]，以及大括号 { 和 }，还有双引号 " 绝对不能漏掉。
+
+标点符号必须是英文半角的。
+
+如果你有多个 yabook 账号想一起签到，可以这样写：
+
+JSON
 [
   {
-    "username": "你的yabook邮箱或用户名",
-    "password": "你的yabook密码"
+    "username": "账号1",
+    "password": "密码1"
+  },
+  {
+    "username": "账号2",
+    "password": "密码2"
   }
 ]
-### (如需多账号，继续在数组内添加 {} 对象并用逗号分隔即可。)
+###
+
+ (如需多账号，继续在数组内添加 {} 对象并用逗号分隔即可。)
 
 🤖 TG_BOT_TOKEN (必填)
 填写你从 Telegram @BotFather 获取的 Bot Token。
