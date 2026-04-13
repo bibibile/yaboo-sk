@@ -1,0 +1,40 @@
+name: yabook renew
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Runs every day 10:00 (UTC 02:00 ) 
+  workflow_dispatch: 
+
+jobs:
+  renew-server:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '22'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps chrome
+
+    - name: Run Extension Script
+      env:
+        ACCOUNTS: ${{ secrets.ACCOUNTS }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      run: npm start || true
+
+    - name: Upload Screenshots
+      if: always() 
+      uses: actions/upload-artifact@v6
+      with:
+        name: screenshots
+        path: "*.png"
+        retention-days: 6
