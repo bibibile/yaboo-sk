@@ -23,7 +23,6 @@ async function sendTelegramNotification(message, imagePath = null) {
         if (imagePath) {
             const formData = new FormData();
             formData.append('chat_id', TG_CHAT_ID);
-            // 将消息格式设置为 Markdown 以支持加粗等排版
             formData.append('caption', message);
             formData.append('parse_mode', 'Markdown');
 
@@ -61,6 +60,20 @@ async function sendTelegramNotification(message, imagePath = null) {
     } catch (error) {
         console.error('发送 Telegram 通知时出错:', error);
     }
+}
+
+// 获取格式化的北京时间
+function getCurrentTime() {
+    return new Date().toLocaleString('zh-CN', { 
+        timeZone: 'Asia/Shanghai', 
+        hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    }).replace(/\//g, '-');
 }
 
 (async () => {
@@ -109,13 +122,10 @@ async function sendTelegramNotification(message, imagePath = null) {
 
             try {
                 console.log(`正在查找签到按钮...`);
-                // 模糊匹配包含“签到雅币+”的按钮，为了提取里面的数字
                 const checkInButton = page.locator('text=/签到雅币\\s*\\+\\s*\\d+/i').first();
                 await checkInButton.waitFor({ state: 'visible', timeout: 5000 });
                 
-                // 提取按钮上的文字，比如“签到雅币+5”
                 const buttonText = await checkInButton.innerText();
-                // 用正则提取出数字部分
                 const match = buttonText.match(/\+(\d+)/);
                 if (match && match[1]) {
                     gainedCoins = match[1];
@@ -135,28 +145,28 @@ async function sendTelegramNotification(message, imagePath = null) {
             await page.waitForLoadState('networkidle');
             
             try {
-                // 尝试查找包含“雅币总数量”和数字的文本
-                // 这里使用了一个较宽泛的定位方式，如果页面结构复杂可能需要调整
-                const coinTextLocator = page.locator('text=/雅币总数量[：:]\\s*\\d+/i').first();
-                await coinTextLocator.waitFor({ state: 'visible', timeout: 5000 });
-                const fullCoinText = await coinTextLocator.innerText();
+                // 抓取整个页面的文本
+                const bodyText = await page.locator('body').innerText();
                 
-                // 从类似“雅币总数量：65个”中提取出数字 65
-                const totalMatch = fullCoinText.match(/雅币总数量[：:]\s*(\d+)/i);
+                // 进一步放宽正则：匹配“雅币”，跳过中间的非数字字符（比如换行/制表符/其它文字），提取数字，直到遇见“个”
+                const totalMatch = bodyText.match(/雅币[^\d]*?(\d+)\s*个/);
+                
                 if (totalMatch && totalMatch[1]) {
                     totalCoins = totalMatch[1];
                     console.log(`成功获取当前雅币总数: ${totalCoins}`);
+                } else {
+                    console.log(`未能匹配到雅币总数，可能页面结构有变。`);
                 }
             } catch (e) {
-                console.log(`未能在页面上直接找到包含“雅币总数量：XX”的文本。`);
-                // 如果上面没找到，尝试只找页面里的“雅币”附近的数字，这里仅作为兜底
+                console.log(`获取雅币总额时发生错误: ${e.message}`);
             }
 
-            // 4. 截图 (截取用户中心页面)
+            // 4. 截图
             const screenshotPath = `status_${user.username}.png`;
             await page.screenshot({ path: screenshotPath, fullPage: true });
 
-            // 5. 组合 Markdown 格式的消息并发送
+            // 5. 获取当前时间并发送通知
+            const finishTime = getCurrentTime();
             const successMsg = 
 `🚀 *yabook 签到报告*
 
@@ -164,16 +174,20 @@ async function sendTelegramNotification(message, imagePath = null) {
 🎁 *今日签到*：\`+${gainedCoins}\` 雅币
 💰 *雅币总额*：\`${totalCoins}\` 个
 
-_运行状态：✅ 执行完毕_`;
+_运行状态：✅ 执行完毕_
+_完成时间：${finishTime}_`;
             
             await sendTelegramNotification(successMsg, screenshotPath);
 
         } catch (error) {
+            const finishTime = getCurrentTime();
             const errorMsg = 
 `❌ *yabook 签到报错*
 
 👤 *用户*：\`${user.username}\`
-⚠️ *错误信息*：\`${error.message}\``;
+⚠️ *错误信息*：\`${error.message}\`
+
+_完成时间：${finishTime}_`;
 
             console.error(errorMsg);
             const errorPath = `error_${user.username}.png`;
