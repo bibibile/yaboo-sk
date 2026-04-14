@@ -23,7 +23,9 @@ async function sendTelegramNotification(message, imagePath = null) {
         if (imagePath) {
             const formData = new FormData();
             formData.append('chat_id', TG_CHAT_ID);
+            // 将消息格式设置为 Markdown 以支持加粗等排版
             formData.append('caption', message);
+            formData.append('parse_mode', 'Markdown');
 
             const fileBuffer = fs.readFileSync(imagePath);
             const blob = new Blob([fileBuffer]);
@@ -45,7 +47,8 @@ async function sendTelegramNotification(message, imagePath = null) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: TG_CHAT_ID,
-                    text: message
+                    text: message,
+                    parse_mode: 'Markdown'
                 })
             });
 
@@ -80,7 +83,7 @@ async function sendTelegramNotification(message, imagePath = null) {
 
     const browser = await chromium.launch({
         headless: true,
-        channel: 'chrome', // 如果在 Linux/Docker 服务器上运行报错，可以尝试注释掉这行
+        channel: 'chrome', 
     });
 
     for (const user of users) {
@@ -88,46 +91,90 @@ async function sendTelegramNotification(message, imagePath = null) {
         const context = await browser.newContext();
         const page = await context.newPage();
 
-        try {
-            // 1. 导航到登录页面 (根据签到路径推测的常见登录路径)
-            await page.goto('https://yabook.blog/e/member/login/'); 
+        let gainedCoins = '未知';
+        let totalCoins = '未知';
 
-            // 2. 填写账号密码并登录
-            // 如果以下选择器不对，请根据实际网页的 input 标签修改 (如 name="email")
+        try {
+            // 1. 导航到登录页面并登录
+            await page.goto('https://yabook.blog/e/member/login/'); 
             await page.locator('input[name="username"]').fill(user.username);
             await page.locator('input[name="password"]').fill(user.password);
-            // 匹配常见的登录按钮文本，如果没有生效请修改
             await page.getByRole('button', { name: /登录|登 录|Login/i }).click(); 
-
             await page.waitForLoadState('networkidle');
 
-            // 3. 导航到你提供的每日签到页面
+            // 2. 导航到每日签到页面执行签到
             console.log(`正在前往签到页面...`);
             await page.goto('https://yabook.blog/e/member/sign/');
             await page.waitForLoadState('networkidle');
 
-            // 4. 执行签到动作兼容处理
             try {
-                // 尝试寻找页面内是否还有“点击签到”之类的按钮
-                // 设定较短的超时时间，因为可能仅仅访问上述 URL 就已经完成签到了
-                const checkInButton = page.locator('text=/签到|点击签到|立即签到/i').first(); 
-                await checkInButton.waitFor({ state: 'visible', timeout: 3000 });
+                console.log(`正在查找签到按钮...`);
+                // 模糊匹配包含“签到雅币+”的按钮，为了提取里面的数字
+                const checkInButton = page.locator('text=/签到雅币\\s*\\+\\s*\\d+/i').first();
+                await checkInButton.waitFor({ state: 'visible', timeout: 5000 });
+                
+                // 提取按钮上的文字，比如“签到雅币+5”
+                const buttonText = await checkInButton.innerText();
+                // 用正则提取出数字部分
+                const match = buttonText.match(/\+(\d+)/);
+                if (match && match[1]) {
+                    gainedCoins = match[1];
+                }
+
                 await checkInButton.click();
-                await page.waitForTimeout(2000); // 给请求一点响应时间
+                console.log(`成功点击签到按钮，预计获得 ${gainedCoins} 雅币！`);
+                await page.waitForTimeout(3000); 
             } catch (e) {
-                console.log(`未检测到需要额外点击的签到按钮。可能访问页面已自动签到，或者今日已签到。`);
+                console.log(`未找到需点击的签到按钮，可能今日已签到。`);
+                gainedCoins = '0 (可能已签到)';
             }
 
-            // 5. 截图并发送成功通知
-            // 截图会完整保留最终页面的状态，你可以通过 Telegram 收到的图片直观判断是否真的签到成功了
-            const successMsg = `🚀 *yabook 签到通知* \n\n✅ 用户 ${user.username} 已执行签到流程，请查看截图确认状态。`;
-            console.log(successMsg);
-            const successPath = `success_${user.username}.png`;
-            await page.screenshot({ path: successPath, fullPage: true });
-            await sendTelegramNotification(successMsg, successPath);
+            // 3. 导航到用户中心获取总雅币
+            console.log(`正在前往用户中心获取雅币总额...`);
+            await page.goto('https://yabook.blog/e/member/cp/');
+            await page.waitForLoadState('networkidle');
+            
+            try {
+                // 尝试查找包含“雅币总数量”和数字的文本
+                // 这里使用了一个较宽泛的定位方式，如果页面结构复杂可能需要调整
+                const coinTextLocator = page.locator('text=/雅币总数量[：:]\\s*\\d+/i').first();
+                await coinTextLocator.waitFor({ state: 'visible', timeout: 5000 });
+                const fullCoinText = await coinTextLocator.innerText();
+                
+                // 从类似“雅币总数量：65个”中提取出数字 65
+                const totalMatch = fullCoinText.match(/雅币总数量[：:]\s*(\d+)/i);
+                if (totalMatch && totalMatch[1]) {
+                    totalCoins = totalMatch[1];
+                    console.log(`成功获取当前雅币总数: ${totalCoins}`);
+                }
+            } catch (e) {
+                console.log(`未能在页面上直接找到包含“雅币总数量：XX”的文本。`);
+                // 如果上面没找到，尝试只找页面里的“雅币”附近的数字，这里仅作为兜底
+            }
+
+            // 4. 截图 (截取用户中心页面)
+            const screenshotPath = `status_${user.username}.png`;
+            await page.screenshot({ path: screenshotPath, fullPage: true });
+
+            // 5. 组合 Markdown 格式的消息并发送
+            const successMsg = 
+`🚀 *yabook 签到报告*
+
+👤 *用户*：\`${user.username}\`
+🎁 *今日签到*：\`+${gainedCoins}\` 雅币
+💰 *雅币总额*：\`${totalCoins}\` 个
+
+_运行状态：✅ 执行完毕_`;
+            
+            await sendTelegramNotification(successMsg, screenshotPath);
 
         } catch (error) {
-            const errorMsg = `❌ *yabook 签到通知* \n\n❌ 用户 ${user.username} 处理失败: ${error.message}`;
+            const errorMsg = 
+`❌ *yabook 签到报错*
+
+👤 *用户*：\`${user.username}\`
+⚠️ *错误信息*：\`${error.message}\``;
+
             console.error(errorMsg);
             const errorPath = `error_${user.username}.png`;
             await page.screenshot({ path: errorPath, fullPage: true });
