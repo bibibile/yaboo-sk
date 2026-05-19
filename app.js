@@ -76,6 +76,20 @@ function getCurrentTime() {
     }).replace(/\//g, '-');
 }
 
+// 封装提取雅币总额的函数
+async function getTotalCoins(page) {
+    try {
+        const bodyText = await page.locator('body').innerText();
+        const totalMatch = bodyText.match(/雅币[^\d]*?(\d+)\s*个/);
+        if (totalMatch && totalMatch[1]) {
+            return parseInt(totalMatch[1], 10);
+        }
+    } catch (e) {
+        console.error(`提取雅币总数失败: ${e.message}`);
+    }
+    return null; // 提取失败返回 null
+}
+
 (async () => {
     let users = [];
     try {
@@ -110,8 +124,8 @@ function getCurrentTime() {
             await dialog.accept();
         });
 
-        let gainedCoins = '未知';
-        let totalCoins = '未知';
+        let beforeCoins = null;
+        let afterCoins = null;
 
         try {
             // 1. 导航到登录页面并登录
@@ -119,74 +133,67 @@ function getCurrentTime() {
             await page.locator('input[name="username"]').fill(user.username);
             await page.locator('input[name="password"]').fill(user.password);
             await page.getByRole('button', { name: /登录|登 录|Login/i }).click(); 
-            // 增加等待时间，确保登录完成
             await page.waitForLoadState('networkidle');
             await page.waitForTimeout(2000); 
 
-            // 2. 导航到签到页面
-            console.log(`正在前往专属签到页面...`);
-            await page.goto('https://yabook.blog/e/member/sign/');
-            // 确保页面 DOM 元素加载完毕
-            await page.waitForLoadState('domcontentloaded');
-
-            // 3. 执行签到动作
-            try {
-                console.log(`正在查找“签到雅币+X”按钮...`);
-                // 使用更健壮的定位器，忽略空格带来的影响
-                const checkInButton = page.locator('text=/签到雅币\\s*\\+\\s*\\d+/').first();
-                
-                // 等待按钮出现，最多等 8 秒
-                await checkInButton.waitFor({ state: 'visible', timeout: 8000 });
-                
-                // 获取按钮上的文字，提取出获得的雅币数量
-                const buttonText = await checkInButton.innerText();
-                const match = buttonText.match(/\+(\d+)/);
-                if (match && match[1]) {
-                    gainedCoins = match[1];
-                }
-
-                // 强制点击 (防止有其他不可见元素遮挡)
-                await checkInButton.click({ force: true });
-                console.log(`成功点击签到按钮，预计获得 +${gainedCoins} 雅币！`);
-                
-                // 等待后端处理签到请求
-                await page.waitForTimeout(3000); 
-            } catch (e) {
-                console.log(`未找到签到按钮。可能今日已签到过，或者网络较慢未加载。`);
-                gainedCoins = '0 (可能已签到)';
-            }
-
-            // 4. 返回用户中心获取总雅币
-            console.log(`正在前往用户中心获取雅币总额...`);
+            // 2. 前往用户中心获取【签到前】的雅币总额
+            console.log(`正在前往用户中心获取签到前雅币总额...`);
             await page.goto('https://yabook.blog/e/member/cp/');
             await page.waitForLoadState('networkidle');
-            
+            beforeCoins = await getTotalCoins(page);
+            console.log(`签到前雅币总额: ${beforeCoins !== null ? beforeCoins : '获取失败'}`);
+
+            // 3. 导航到专属签到页面并执行点击
+            console.log(`正在前往专属签到页面执行签到...`);
+            await page.goto('https://yabook.blog/e/member/sign/');
+            await page.waitForLoadState('domcontentloaded');
+
             try {
-                const bodyText = await page.locator('body').innerText();
-                const totalMatch = bodyText.match(/雅币[^\d]*?(\d+)\s*个/);
-                
-                if (totalMatch && totalMatch[1]) {
-                    totalCoins = totalMatch[1];
-                    console.log(`成功获取当前雅币总数: ${totalCoins}`);
-                } else {
-                    console.log(`未能匹配到雅币总数。`);
-                }
+                // 放宽按钮匹配条件，只要有“签到”两个字就点
+                const checkInButton = page.locator('text=/签到/').first();
+                await checkInButton.waitFor({ state: 'visible', timeout: 5000 });
+                await checkInButton.click({ force: true });
+                console.log(`已触发签到按钮点击动作！`);
+                await page.waitForTimeout(3000); // 等待后端处理
             } catch (e) {
-                console.log(`获取雅币总额时发生错误: ${e.message}`);
+                console.log(`未找到签到按钮或点击失败，可能今日已签到。`);
             }
 
-            // 5. 截图保存当前状态
+            // 4. 再次返回用户中心获取【签到后】的雅币总额
+            console.log(`正在返回用户中心获取最新雅币总额...`);
+            await page.goto('https://yabook.blog/e/member/cp/');
+            await page.waitForLoadState('networkidle');
+            afterCoins = await getTotalCoins(page);
+            console.log(`签到后雅币总额: ${afterCoins !== null ? afterCoins : '获取失败'}`);
+
+            // 5. 计算差值得出实际获得数量
+            let gainedCoinsStr = '未知';
+            if (beforeCoins !== null && afterCoins !== null) {
+                const diff = afterCoins - beforeCoins;
+                if (diff > 0) {
+                    gainedCoinsStr = `+${diff}`;
+                } else {
+                    gainedCoinsStr = `0 (今日已签到或无收益)`;
+                }
+            } else {
+                gainedCoinsStr = '计算失败 (余额抓取异常)';
+            }
+
+            // 确定最终用于展示的总额
+            let displayTotalCoins = afterCoins !== null ? afterCoins : (beforeCoins !== null ? beforeCoins : '未知');
+
+            // 6. 截图保存当前状态
             const screenshotPath = `status_${user.username}.png`;
             await page.screenshot({ path: screenshotPath, fullPage: true });
 
-            // 6. 发送最终报告
+            // 7. 发送最终报告
             const finishTime = getCurrentTime();
             const successMsg = 
 `🚀 *yabook 签到报告*
 
 👤 *用户*：\`${user.username}\`
-🎁 *今日签到*：\`+${gainedCoins}\` 雅币
-💰 *雅币总额*：\`${totalCoins}\` 个
+🎁 *实际收益*：\`${gainedCoinsStr}\` 雅币
+💰 *最新总额*：\`${displayTotalCoins}\` 个
 
 _运行状态：✅ 执行完毕_
 _完成时间：${finishTime}_`;
