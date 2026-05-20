@@ -120,9 +120,9 @@ async function getTotalCoins(page) {
 
         let beforeCoins = null;
         let afterCoins = null;
-        let siteAlertMsg = '无弹窗反馈'; // 新增：用于记录网站真实的弹窗提示
+        let siteAlertMsg = '无弹窗反馈'; 
 
-        // 监听并自动处理网页弹窗，同时将弹窗文字记录下来
+        // 监听并拦截签到成功或失败的弹窗
         page.on('dialog', async dialog => {
             siteAlertMsg = dialog.message();
             console.log(`【拦截到网页弹窗】: ${siteAlertMsg}`);
@@ -144,19 +144,23 @@ async function getTotalCoins(page) {
             beforeCoins = await getTotalCoins(page);
 
             // 3. 执行签到
+            console.log(`前往签到专属页面...`);
             await page.goto('https://yabook.blog/e/member/sign/');
             await page.waitForLoadState('domcontentloaded');
 
             try {
-                const checkInButton = page.locator('text=/签到/').first();
+                // 精准定位：只寻找包含“签到雅币+”字样的那个具体按钮
+                // 如果小主想改为点击随机签到，可以把这里换成 'text="试试手气"'
+                const checkInButton = page.locator('text=/签到雅币\\s*\\+/').first();
                 await checkInButton.waitFor({ state: 'visible', timeout: 5000 });
-                // 使用 dispatchEvent 强制触发点击，无视一切网页遮挡物
-                await checkInButton.dispatchEvent('click');
-                console.log(`已强制触发签到点击动作！`);
-                // 等待足够长的时间让弹窗出现并被拦截
+                
+                // 恢复为正常的点击操作
+                await checkInButton.click({ force: true });
+                console.log(`精准点击 [签到雅币+X] 按钮成功！`);
+                
                 await page.waitForTimeout(4000); 
             } catch (e) {
-                console.log(`未找到签到按钮。`);
+                console.log(`未找到 [签到雅币+X] 按钮，可能今日已签到。`);
             }
 
             // 4. 获取签到后总额
@@ -181,7 +185,7 @@ async function getTotalCoins(page) {
             const screenshotPath = `status_${user.username}.png`;
             await page.screenshot({ path: screenshotPath, fullPage: true });
 
-            // 7. 发送最终报告 (加入网站真实反馈)
+            // 7. 发送最终报告
             const finishTime = getCurrentTime();
             const successMsg = 
 `🚀 *yabook 签到报告*
