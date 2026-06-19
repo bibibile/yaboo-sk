@@ -1,0 +1,19 @@
+name: Run Renewal Script
+
+on:
+  repository_dispatch:
+    types: [trigger-renewal] # 监听名为 trigger-renewal 的特定事件
+  workflow_dispatch: # 保留一个手动触发的按钮以备不时之需
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Execute renewal script
+        run: |
+          # 赋予脚本执行权限并运行（请替换为您实际的脚本路径）
+          chmod +x ./your_renewal_script.sh
+          ./your_renewal_script.sh
