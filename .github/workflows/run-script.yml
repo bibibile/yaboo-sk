@@ -1,9 +1,9 @@
-name: Run Renewal Script
+name: Run Script and Notify
 
 on:
   repository_dispatch:
-    types: [trigger-renewal] # 监听名为 trigger-renewal 的特定事件
-  workflow_dispatch: # 保留一个手动触发的按钮以备不时之需
+    types: [trigger-renewal] # 监听公库发来的信号
+  workflow_dispatch: # 允许在私库也手动触发
 
 jobs:
   run-script:
@@ -14,6 +14,19 @@ jobs:
         
       - name: Execute renewal script
         run: |
-          # 赋予脚本执行权限并运行（请替换为您实际的脚本路径）
+          # 运行您的续期脚本
           chmod +x ./your_renewal_script.sh
           ./your_renewal_script.sh
+
+      - name: Send Telegram Notification
+        if: always() # 无论脚本成功与否，都发通知
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            MESSAGE="✅ 小主，续期脚本执行成功啦！"
+          else
+            MESSAGE="❌ 报告小主，续期脚本执行出现错误，请检查日志！"
+          fi
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TG_CHAT_ID }} \
+          -d text="$MESSAGE"
