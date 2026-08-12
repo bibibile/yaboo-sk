@@ -39,7 +39,6 @@ jobs:
         path: "*.png"
         retention-days: 6
 
-    # 清理所有旧运行记录：只保留当前最新 1 条
     - name: clear old run jobs
       if: always()
       env:
@@ -55,3 +54,5 @@ jobs:
               gh run delete $run_id || true
             fi
           done
+
+
