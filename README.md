@@ -56,11 +56,11 @@
 
 🤖 TG_BOT_TOKEN (必填)
 填写你从 Telegram @BotFather 获取的 Bot Token。
-示例：8558346335:Asaasdf0Am_YZ9PYxoLy4kzrUww
+示例：855:AsaaszrUww
 
 💬 TG_CHAT_ID (必填)
 填写用于接收通知的 Telegram 个人或群组 ID。
-示例：5000000061
+示例：500001
 
 3. 测试与运行
 变量配置完成后，点击仓库顶部的 Actions 标签页。
