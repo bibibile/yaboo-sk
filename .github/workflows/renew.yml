@@ -2,57 +2,65 @@ name: yabook renew
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # Runs every day 10:00 (UTC 02:00 ) 
-  workflow_dispatch: 
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+# 允许 GitHub Actions 删除旧的 Workflow Run
+permissions:
+  actions: write
+  contents: read
 
 jobs:
   renew-server:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v6
-      with:
-        node-version: '22'
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
 
-    - name: Install dependencies
-      run: npm install
+      - name: Install dependencies
+        run: npm install
 
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps chrome
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chrome
 
-    - name: Run Extension Script
-      env:
-        ACCOUNTS: ${{ secrets.ACCOUNTS }}
-        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-      run: npm start || true
+      - name: Run Extension Script
+        env:
+          ACCOUNTS: ${{ secrets.ACCOUNTS }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: npm start || true
 
-    - name: Upload Screenshots
-      if: always() 
-      uses: actions/upload-artifact@v6
-      with:
-        name: screenshots
-        path: "*.png"
-        retention-days: 6
+      - name: Upload Screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: screenshots
+          path: "*.png"
+          retention-days: 6
 
-    - name: clear old run jobs
-      if: always()
-      env:
+      - name: Clear old run jobs
+        if: always()
+        env:
           GH_TOKEN: ${{ github.token }}
         run: |
           CURRENT_RUN="${{ github.run_id }}"
-          # 提取最多 1000 条历史 ID
-          runs=$(gh run list --workflow="${{ github.workflow }}" --limit 1000 --json databaseId --jq '.[].databaseId')
-          
+
+          # 提取最多 1000 条历史 Run ID
+          runs=$(gh run list \
+            --workflow="${{ github.workflow }}" \
+            --limit 1000 \
+            --json databaseId \
+            --jq '.[].databaseId')
+
           for run_id in $runs; do
             if [ "$run_id" != "$CURRENT_RUN" ]; then
               echo "Deleting old run: $run_id"
-              gh run delete $run_id || true
+              gh run delete "$run_id" --confirm || true
             fi
           done
-
-
