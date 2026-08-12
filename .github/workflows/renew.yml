@@ -38,3 +38,20 @@ jobs:
         name: screenshots
         path: "*.png"
         retention-days: 6
+
+    # 清理所有旧运行记录：只保留当前最新 1 条
+    - name: clear old run jobs
+      if: always()
+      env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT_RUN="${{ github.run_id }}"
+          # 提取最多 1000 条历史 ID
+          runs=$(gh run list --workflow="${{ github.workflow }}" --limit 1000 --json databaseId --jq '.[].databaseId')
+          
+          for run_id in $runs; do
+            if [ "$run_id" != "$CURRENT_RUN" ]; then
+              echo "Deleting old run: $run_id"
+              gh run delete $run_id || true
+            fi
+          done
